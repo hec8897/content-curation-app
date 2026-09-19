@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/api.dart';
 import '../data/store.dart';
 import '../design/app_colors.dart';
 import '../design/app_text.dart';
@@ -88,6 +89,22 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+            const SizedBox(height: 32),
+            Center(
+              child: AppTextButton(
+                label: '로그아웃',
+                onTap: () async {
+                  final ok = await showConfirmDialog(
+                    context,
+                    title: '로그아웃할까요?',
+                    message: '다시 로그인하면 설정은 그대로 남아 있어요.',
+                    confirmLabel: '로그아웃',
+                  );
+                  if (ok) await auth.signOut();
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
           ],
         ),
       ),

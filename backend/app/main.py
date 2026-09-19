@@ -10,7 +10,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import models
-from .auth import BCRYPT_MAX_BYTES, create_token, current_user, hash_password, verify_password
+from .auth import (
+    BCRYPT_MAX_BYTES,
+    create_token,
+    current_user,
+    hash_password,
+    verify_google_id_token,
+    verify_password,
+)
 from .db import Base, engine, get_db
 
 
@@ -40,6 +47,10 @@ class Credentials(BaseModel):
 
 class TokenOut(BaseModel):
     token: str
+
+
+class GoogleLogin(BaseModel):
+    id_token: str
 
 
 class SourceOut(BaseModel):
@@ -202,6 +213,27 @@ def login(body: Credentials, db: Session = Depends(get_db)) -> TokenOut:
     # 계정 존재 여부를 응답으로 구분하지 않는다.
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다")
+    return TokenOut(token=create_token(user.id))
+
+
+@app.post("/auth/google", response_model=TokenOut)
+def google_login(body: GoogleLogin, db: Session = Depends(get_db)) -> TokenOut:
+    google_sub, email = verify_google_id_token(body.id_token)
+
+    user = db.scalar(select(models.User).where(models.User.google_sub == google_sub))
+    if user is None:
+        # 같은 이메일로 이미 비밀번호 가입을 했다면 새 계정을 만들지 않고 연결한다.
+        # Google이 이메일 소유를 검증했으므로 탈취가 아니고, 안 하면 계정이 둘로 갈린다.
+        user = db.scalar(select(models.User).where(models.User.email == email))
+        if user is None:
+            user = models.User(email=email, google_sub=google_sub)
+            db.add(user)
+            db.flush()
+            _seed(db, user)
+        else:
+            user.google_sub = google_sub
+        db.commit()
+
     return TokenOut(token=create_token(user.id))
 
 

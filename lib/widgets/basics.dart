@@ -153,12 +153,16 @@ class PrimaryButton extends StatelessWidget {
 }
 
 class OutlineButton extends StatelessWidget {
-  const OutlineButton({super.key, required this.label, required this.onTap});
+  const OutlineButton({super.key, required this.label, required this.onTap, this.leading});
   final String label;
   final VoidCallback onTap;
 
+  /// 라벨 왼쪽 아이콘. 소셜 로그인처럼 로고가 필요한 버튼에 쓴다.
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
+    final text = Text(label, style: AppText.label1.w600.c(AppColors.labelNormal));
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -169,7 +173,12 @@ class OutlineButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.lineSolid),
         ),
-        child: Text(label, style: AppText.label1.w600.c(AppColors.labelNormal)),
+        child: leading == null
+            ? text
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [leading!, const SizedBox(width: 8), text],
+              ),
       ),
     );
   }

@@ -30,7 +30,12 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = _pk()
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # Google로만 가입한 사용자는 비밀번호가 없다.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Google 계정의 불변 식별자. 이메일은 사용자가 바꿀 수 있어 연결 키로 쓰지 않는다.
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     topics: Mapped[list["Topic"]] = relationship(

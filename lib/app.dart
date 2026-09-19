@@ -1,20 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'data/api.dart';
 import 'data/store.dart';
 import 'design/app_colors.dart';
 import 'design/app_text.dart';
 import 'screens/article_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sources_screen.dart';
 import 'screens/topic_detail_screen.dart';
 
 final _router = GoRouter(
-  initialLocation: store.onboarded ? '/' : '/onboarding',
+  initialLocation: '/',
+  // auth는 로그인·로그아웃, store는 온보딩 완료를 알린다. 둘 다 리다이렉트 판단에 쓰인다.
+  refreshListenable: Listenable.merge([auth, store]),
+  redirect: (_, state) {
+    final path = state.matchedLocation;
+    if (!auth.signedIn) return path == '/login' ? null : '/login';
+    if (path == '/login') return store.onboarded ? '/' : '/onboarding';
+    if (!store.onboarded && path != '/onboarding') return '/onboarding';
+    return null;
+  },
   routes: [
+    GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
     GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
     GoRoute(
       path: '/article/:articleId',
