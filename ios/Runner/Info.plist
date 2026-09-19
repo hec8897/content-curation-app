@@ -66,5 +66,27 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- iOS는 평문 HTTP를 막는다. 로컬 백엔드(http://localhost:8000)에 붙기 위한 예외이며,
+	     localhost와 사설망에만 적용되고 공개 인터넷은 여전히 HTTPS만 허용된다. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Google 로그인용. iOS 클라이언트 ID의 "역방향" 문자열을 넣어야 한다.
+	     예: 클라이언트 ID가 123-abc.apps.googleusercontent.com 이면
+	         com.googleusercontent.apps.123-abc
+	     이 값이 비어 있으면 Google 로그인 창에서 앱으로 돌아오지 못한다. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.725501602680-vj84kaqd372i4ff8dig5c7sjlrjhho6l</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
