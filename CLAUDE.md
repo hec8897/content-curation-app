@@ -46,11 +46,15 @@ Google 로그인만 503이 되고 나머지는 정상 동작하므로 원인을 
 | Database | `curator` |
 | User / Password | `curator` / `curator` |
 | `DATABASE_URL` 기본값 | `postgresql+psycopg://curator:curator@localhost:5432/curator` |
-| `JWT_SECRET` 기본값 | `dev-only-secret-do-not-deploy` |
 
 런타임 설정은 `backend/.env`에서 읽는다(gitignore됨). 항목 설명은 `backend/.env.example`에 있다.
-`GOOGLE_CLIENT_ID`만 기본값이 없고, 나머지는 비워두면 로컬 개발용 기본값으로 동작한다.
 `.env`에 `KEY=`로 비워둔 값은 미설정으로 취급된다.
+
+| 변수 | 없으면 |
+|---|---|
+| `JWT_SECRET` | **기동 거부.** 빈 키로 서명하면 토큰이 위조 가능하고, 고정 기본값은 그대로 배포된다 |
+| `GOOGLE_CLIENT_ID` | Google 로그인 라우트만 503. 나머지는 정상 동작 |
+| `DATABASE_URL` | 위 표의 로컬 Postgres 기본값 사용 |
 
 DBeaver가 이미 설치돼 있다 — 위 값으로 PostgreSQL 연결을 만들면 된다. 터미널이 편하면
 `docker compose exec db psql -U curator -d curator`.

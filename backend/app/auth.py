@@ -19,8 +19,14 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, "").strip() or default
 
 
-# ponytail: 개발용 고정 시크릿. 배포할 땐 .env나 환경변수로 JWT_SECRET을 반드시 주입한다.
-SECRET = _env("JWT_SECRET", "dev-only-secret-do-not-deploy")
+# 기본값을 두지 않는다. 빈 키로 서명하면 누구나 토큰을 위조할 수 있고, 고정 기본값을 두면
+# 그게 그대로 배포된다. 없으면 기동 자체를 막는 편이 안전하다.
+SECRET = _env("JWT_SECRET")
+if not SECRET:
+    raise RuntimeError(
+        "JWT_SECRET이 설정되지 않았습니다. backend/.env.example을 .env로 복사하고 값을 채운 뒤 "
+        "`uv run --env-file .env uvicorn app.main:app`으로 실행하세요."
+    )
 ALGORITHM = "HS256"
 
 # ponytail: 30일 액세스 토큰 하나. 리프레시·회전·서버측 폐기가 없어서 유출되면 만료까지 유효하다.
