@@ -11,8 +11,9 @@ UI 목업으로 시작해 기능을 하나씩 붙이는 중이다.
 
 ```bash
 flutter pub get
+cp env.example.json env.json    # 최초 1회. Google 클라이언트 ID를 채운다
 xcrun simctl boot "iPhone 17"   # iOS 시뮬레이터 부팅 (또는 open -a DeviceHub)
-flutter run -d "iPhone 17"
+flutter run -d "iPhone 17" --dart-define-from-file=env.json
 ```
 
 백엔드는 별도로 띄운다. DB 접속 정보와 주의사항은 `CLAUDE.md`의 백엔드 절에 있다.

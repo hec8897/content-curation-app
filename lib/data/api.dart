@@ -6,18 +6,23 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
-// Google Cloud Console에서 만든 OAuth 클라이언트 ID를 여기 채운다.
-// 비밀값이 아니다 — 앱 바이너리를 뜯으면 그대로 보이는 공개 식별자다.
+// 설정값은 env.json에서 온다. 실행할 때 파일을 넘겨야 한다:
+//   flutter run -d "iPhone 17" --dart-define-from-file=env.json
+// 항목 설명은 env.example.json 참고. 플래그를 빼면 값이 전부 빈 문자열이 되고,
+// Google 버튼이 "클라이언트 ID를 설정하면 활성화됩니다" 안내로 바뀐다.
 //
-// serverClientId는 **웹 애플리케이션** 클라이언트 ID여야 하고, 백엔드의 GOOGLE_CLIENT_ID와
-// 반드시 같아야 한다. 이 값이 ID 토큰의 aud가 되고 서버가 그걸로 검증한다.
-// iOS 클라이언트 ID는 iOS에서만 쓰이며, Info.plist의 역방향 URL scheme과 짝이다.
-const googleServerClientId =
-    '725501602680-sev9pma2r0nvr2h5n34bk6k5sjgt7920.apps.googleusercontent.com';
-const googleIosClientId =
-    '725501602680-vj84kaqd372i4ff8dig5c7sjlrjhho6l.apps.googleusercontent.com';
+// 비밀값을 감추는 장치가 아니다 — String.fromEnvironment는 컴파일 타임에 인라인되므로
+// 값은 빌드된 바이너리에 그대로 들어간다. 환경별로 값을 갈아끼우기 위한 것이다.
+//
+// serverClientId는 **웹 애플리케이션** 클라이언트 ID여야 하고 백엔드의 GOOGLE_CLIENT_ID와
+// 같아야 한다. 이 값이 ID 토큰의 aud가 되고 서버가 그걸로 검증한다.
+const googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
-// ponytail: 개발용 로컬 서버. 배포 시 --dart-define=API_BASE=https://... 로 덮는다.
+// iOS에서만 쓰인다. Info.plist의 역방향 URL scheme과 짝이며, 그쪽은 네이티브 빌드
+// 설정이라 env로 옮길 수 없다 — iOS 클라이언트 ID를 바꾸면 양쪽을 같이 고쳐야 한다.
+const googleIosClientId = String.fromEnvironment('GOOGLE_IOS_CLIENT_ID');
+
+// 비워두면 로컬 백엔드를 본다.
 // 안드로이드 에뮬레이터에서 localhost는 에뮬레이터 자신이라 호스트를 10.0.2.2로 봐야 한다.
 const _apiBaseOverride = String.fromEnvironment('API_BASE');
 

@@ -14,10 +14,15 @@ Started as a pure UI mockup and is being wired up one piece at a time. What exis
 - **콘텐츠 아이템** — 수집기가 없어 여전히 `store.dart`의 목업 상수다. AI 요약도 `Future.delayed` 흉내.
 
 ```bash
+cp env.example.json env.json    # 최초 1회. Google 클라이언트 ID를 채운다
 xcrun simctl boot "iPhone 17"   # Xcode 27에는 Simulator.app이 없다 — open -a Simulator는 실패한다
-flutter run -d "iPhone 17"
+flutter run -d "iPhone 17" --dart-define-from-file=env.json
 flutter analyze                 # 무경고 상태를 유지한다
 ```
+
+**`--dart-define-from-file`을 빼면** 클라이언트 ID가 빈 문자열이 되어 Google 버튼이
+"클라이언트 ID를 설정하면 활성화됩니다" 안내로 바뀐다. 크래시가 아니라 조용히 비활성화되므로
+Google 로그인이 안 보이면 이 플래그를 먼저 확인한다.
 
 `flutter doctor`의 "iOS 27.0 Simulator not installed" 경고는 무시한다. iOS 26.5 런타임으로 빌드·실행 모두 된다.
 
