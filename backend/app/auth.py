@@ -13,8 +13,14 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .models import User
 
-# ponytail: 개발용 고정 시크릿. 배포할 땐 JWT_SECRET을 환경변수로 반드시 주입한다.
-SECRET = os.environ.get("JWT_SECRET", "dev-only-secret-do-not-deploy")
+# .env에 `KEY=`로 비워둔 경우도 미설정으로 취급한다. os.environ.get의 default는 키가
+# 아예 없을 때만 동작해서, 빈 문자열이 그대로 흘러들어가면 조용히 잘못된 값이 된다.
+def _env(name: str, default: str = "") -> str:
+    return os.environ.get(name, "").strip() or default
+
+
+# ponytail: 개발용 고정 시크릿. 배포할 땐 .env나 환경변수로 JWT_SECRET을 반드시 주입한다.
+SECRET = _env("JWT_SECRET", "dev-only-secret-do-not-deploy")
 ALGORITHM = "HS256"
 
 # ponytail: 30일 액세스 토큰 하나. 리프레시·회전·서버측 폐기가 없어서 유출되면 만료까지 유효하다.
@@ -23,12 +29,10 @@ TOKEN_TTL = timedelta(days=30)
 
 BCRYPT_MAX_BYTES = 72
 
-# Google ID 토큰의 aud로 기대하는 값. **웹** 클라이언트 ID이며 비밀값이 아니다 —
-# 앱 바이너리에 그대로 들어가는 공개 식별자다. Flutter의 googleServerClientId와 같아야 한다.
-GOOGLE_CLIENT_ID = os.environ.get(
-    "GOOGLE_CLIENT_ID",
-    "725501602680-sev9pma2r0nvr2h5n34bk6k5sjgt7920.apps.googleusercontent.com",
-)
+# Google ID 토큰의 aud로 기대하는 값. **웹** 클라이언트 ID이고 Flutter의
+# googleServerClientId와 같아야 한다. 기본값을 두지 않는다 — 틀린 클라이언트 ID로
+# 조용히 동작하는 것보다 503으로 드러나는 편이 낫다. .env.example 참고.
+GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID")
 
 _bearer = HTTPBearer(auto_error=False)
 _unauthorized = HTTPException(

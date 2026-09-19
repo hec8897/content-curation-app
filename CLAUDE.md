@@ -27,11 +27,15 @@ FastAPI + Postgres. Python 환경은 `uv`가 관리하므로 `activate`는 필�
 
 ```bash
 cd backend
+cp .env.example .env                              # 최초 1회. GOOGLE_CLIENT_ID를 채운다
 docker compose up -d                              # Postgres. 한 번 띄우면 계속 돌아간다
-uv run uvicorn app.main:app --reload --port 8000  # API 서버
+uv run --env-file .env uvicorn app.main:app --reload --port 8000
 curl localhost:8000/health                        # {"status":"ok"}
 open http://localhost:8000/docs                   # 자동 생성 문서에서 바로 호출 가능
 ```
+
+**`--env-file`을 빼면 `.env`가 로드되지 않는다** — uv는 자동으로 읽지 않는다. 빼고 띄우면
+Google 로그인만 503이 되고 나머지는 정상 동작하므로 원인을 눈치채기 어렵다.
 
 로컬 개발용 DB 접속 정보다. **로컬 Docker 컨테이너 전용이고 배포되지 않으므로 여기 적어둔다.**
 실제 배포가 생기면 `DATABASE_URL` / `JWT_SECRET`을 환경변수로 주입하고 이 값들은 쓰지 않는다.
@@ -43,6 +47,10 @@ open http://localhost:8000/docs                   # 자동 생성 문서에서 �
 | User / Password | `curator` / `curator` |
 | `DATABASE_URL` 기본값 | `postgresql+psycopg://curator:curator@localhost:5432/curator` |
 | `JWT_SECRET` 기본값 | `dev-only-secret-do-not-deploy` |
+
+런타임 설정은 `backend/.env`에서 읽는다(gitignore됨). 항목 설명은 `backend/.env.example`에 있다.
+`GOOGLE_CLIENT_ID`만 기본값이 없고, 나머지는 비워두면 로컬 개발용 기본값으로 동작한다.
+`.env`에 `KEY=`로 비워둔 값은 미설정으로 취급된다.
 
 DBeaver가 이미 설치돼 있다 — 위 값으로 PostgreSQL 연결을 만들면 된다. 터미널이 편하면
 `docker compose exec db psql -U curator -d curator`.

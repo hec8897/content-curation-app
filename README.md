@@ -19,8 +19,9 @@ flutter run -d "iPhone 17"
 
 ```bash
 cd backend
-docker compose up -d                              # Postgres
-uv run uvicorn app.main:app --reload --port 8000  # API (http://localhost:8000/docs)
+cp .env.example .env    # 최초 1회. GOOGLE_CLIENT_ID를 채운다
+docker compose up -d    # Postgres
+uv run --env-file .env uvicorn app.main:app --reload --port 8000
 ```
 
 `flutter analyze`는 무경고 상태를 유지한다.

@@ -3,8 +3,10 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql+psycopg://curator:curator@localhost:5432/curator"
+# 빈 문자열도 미설정으로 취급한다 — .env에 `DATABASE_URL=`로 비워둔 경우를 기본값으로 흘린다.
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL", "").strip()
+    or "postgresql+psycopg://curator:curator@localhost:5432/curator"
 )
 
 # ponytail: 동기 엔진. FastAPI가 sync 엔드포인트를 스레드풀에서 돌려주므로 프로토타입 부하에는 충분하다.
