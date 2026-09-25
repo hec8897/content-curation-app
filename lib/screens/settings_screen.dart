@@ -117,10 +117,7 @@ class SettingsScreen extends StatelessWidget {
       );
 
   // 저장 버튼 없음 — 변경 즉시 저장 + 토스트
-  void _set(BuildContext context, VoidCallback action) {
-    action();
-    showToast(context, '저장됨');
-  }
+  void _set(BuildContext context, Future<void> Function() action) => saveWithToast(context, action, '저장됨');
 
   Future<void> _pickTime(BuildContext context) async {
     final picked = await showTimePicker(
@@ -173,13 +170,16 @@ class _ChannelCard extends StatelessWidget {
                 else
                   Row(
                     children: [
-                      Text('계정을 연결하면 알림을 받을 수 있어요', style: AppText.caption1.c(AppColors.labelAlt)),
+                      Flexible(
+                        child: Text('계정을 연결하면 알림을 받을 수 있어요', style: AppText.caption1.c(AppColors.labelAlt)),
+                      ),
                       const SizedBox(width: 6),
                       GestureDetector(
-                        onTap: () {
-                          store.linkChannel(channel.id);
-                          showToast(context, '${channel.name} 연동을 완료했어요');
-                        },
+                        onTap: () => saveWithToast(
+                          context,
+                          () => store.linkChannel(channel.id),
+                          '${channel.name} 연동을 완료했어요',
+                        ),
                         behavior: HitTestBehavior.opaque,
                         child: Text('연동하기 ›', style: AppText.label2.w600.c(AppColors.primary)),
                       ),
@@ -197,8 +197,7 @@ class _ChannelCard extends StatelessWidget {
                 showToast(context, '먼저 연동해 주세요');
                 return;
               }
-              store.toggleChannel(channel.id, v);
-              showToast(context, '저장됨');
+              saveWithToast(context, () => store.toggleChannel(channel.id, v), '저장됨');
             },
           ),
         ],

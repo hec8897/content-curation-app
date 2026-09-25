@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../data/api.dart';
 import '../design/app_colors.dart';
 import '../design/app_text.dart';
 
@@ -409,6 +410,16 @@ void showToast(BuildContext context, String message) {
       content: Text(message, style: AppText.label2.w600.c(Colors.white), textAlign: TextAlign.center),
     ),
   );
+}
+
+/// 서버 저장을 기다린 뒤 성공이면 [done], 실패면 서버 메시지를 토스트로 띄운다.
+Future<void> saveWithToast(BuildContext context, Future<void> Function() action, String done) async {
+  try {
+    await action();
+    if (context.mounted) showToast(context, done);
+  } on ApiException catch (e) {
+    if (context.mounted) showToast(context, e.message);
+  }
 }
 
 Future<bool> showConfirmDialog(

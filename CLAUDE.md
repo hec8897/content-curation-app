@@ -10,7 +10,8 @@ from RSS and YouTube sources, and get delivered on a schedule with AI summaries.
 Started as a pure UI mockup and is being wired up one piece at a time. What exists now:
 
 - **`backend/`** — FastAPI + Postgres. 인증과 사용자 소유 데이터(주제·소스·채널·발송 설정)가 실제로 저장된다.
-- **`lib/`** — Flutter 앱. 아직 `AppStore`의 인메모리 데이터를 쓴다. 백엔드 연결은 미완료.
+- **`lib/`** — Flutter 앱. `AppStore`가 로그인 직후 `GET /bootstrap`으로 불러오고, 변경은 서버 응답을 받은 뒤 반영한다.
+  온보딩 완료 여부만 기기 Keychain(`curator.onboarded:<email>`)에 둔다 — 초기화는 `xcrun simctl keychain booted reset`.
 - **콘텐츠 아이템** — 수집기가 없어 여전히 `store.dart`의 목업 상수다. AI 요약도 `Future.delayed` 흉내.
 
 ```bash
@@ -137,16 +138,14 @@ Routes — 아티클 상세만 셸 밖에 있어 탭바가 숨는다.
 
 ## 열린 작업
 
-- **Flutter ↔ 백엔드 미연결.** `AppStore`가 아직 인메모리다. 필요한 것: `lib/data/api.dart`(HTTP 클라이언트),
-  `AppStore` 메서드 비동기화, 로그인 화면, GoRouter `/login` 리다이렉트, 토큰 보관(`flutter_secure_storage`),
-  iOS `Info.plist`에 `NSAllowsLocalNetworking`(localhost 평문 HTTP 차단 해제).
-- 주제는 DB에서 오지만 콘텐츠는 코드에 남는다 — `topics.slug`(`llm`/`flutter`/`design`)로 목업 아이템을
-  클라이언트에서 붙일 예정. 수집기가 생기면 이 접합점만 걷어낸다.
+- **연결 후 QA 미완료.** 디자인 어긋남·사용성 문제가 남아 있다. 진행 상황은 `ROADMAP.md`.
+- 주제는 DB에서 오지만 콘텐츠는 코드에 남는다 — `Topic.fromJson`이 `topics.slug`(`llm`/`flutter`/`design`)로
+  목업 아이템을 붙인다. 수집기가 생기면 이 접합점만 걷어낸다.
 - 수집기(RSS·YouTube)와 AI 요약, 실제 발송은 아직 없다. 클라이언트가 할 수 없는 일이라 백엔드 작업이다.
 - 알림 설정 화면 미연동 채널 행에서 안내문 + "연동하기 ›" 가로 오버플로 (약 13px) — 수정 필요.
 - Pretendard 미번들 → 시스템 폰트 폴백. `assets/fonts/` + `pubspec.yaml` `fonts:` 선언으로 해결.
 - 썸네일·아이콘이 이모지 플레이스홀더. 실제 이미지는 `ThumbBox`만 교체.
-- 주제 상세 무한 스크롤, 온보딩 완료 여부 로컬 저장 미구현.
+- 주제 상세 무한 스크롤 미구현.
 
 ## design-prototype.html (참고용)
 
