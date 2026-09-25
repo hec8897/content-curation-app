@@ -47,3 +47,10 @@
 ### 6. 배포
 - [ ] `DATABASE_URL` / `JWT_SECRET` 환경변수 주입
 - [ ] 호스팅 선택
+
+## 백로그
+
+순서 미정. 단계에 넣을 때 옮긴다.
+
+- [ ] 주제 삭제 — 백엔드 `DELETE /topics/{id}`(소스는 cascade) + 주제 상세 헤더 삭제 아이콘 → ConfirmDialog → 홈 복귀 + 토스트. 디자인 스펙에 없어 `DESIGN_HANDOFF.md`에 먼저 추가
+  - 주제 0개일 때 소스 탭 크래시(`sources_screen.dart` `clamp(0, -1)`) — 같이 고칠 것

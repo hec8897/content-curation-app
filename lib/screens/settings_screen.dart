@@ -170,7 +170,9 @@ class _ChannelCard extends StatelessWidget {
                 else
                   Row(
                     children: [
-                      Text('계정을 연결하면 알림을 받을 수 있어요', style: AppText.caption1.c(AppColors.labelAlt)),
+                      Flexible(
+                        child: Text('계정을 연결하면 알림을 받을 수 있어요', style: AppText.caption1.c(AppColors.labelAlt)),
+                      ),
                       const SizedBox(width: 6),
                       GestureDetector(
                         onTap: () => saveWithToast(

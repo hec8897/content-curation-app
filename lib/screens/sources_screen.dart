@@ -99,6 +99,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
 
   Widget _header(List<Topic> topics) {
     return Container(
+      width: double.infinity,
       decoration: const BoxDecoration(
         color: AppColors.bg,
         border: Border(bottom: BorderSide(color: AppColors.lineSolid)),
@@ -120,7 +121,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                     onTap: () => setState(() => _index = i),
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      padding: const EdgeInsets.only(right: 18, bottom: 8),
+                      padding: const EdgeInsets.only(right: 18),
                       child: Container(
                         padding: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
@@ -165,7 +166,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
       backgroundColor: Colors.transparent,
       barrierColor: AppColors.dimmer,
       builder: (_) => _SourceSearchSheet(
-        existing: topic.sources.map((s) => s.name).toSet(),
+        existing: {for (final s in topic.sources) ...[s.name, s.url]},
         onAdd: (picked) => saveWithToast(
           context,
           () => store.addSources(topic.id, picked),
@@ -236,10 +237,12 @@ class _SourceSearchSheetState extends State<_SourceSearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final results = searchCatalog
-        .where((s) => !widget.existing.contains(s.name))
-        .where((s) => s.name.toLowerCase().contains(_query.toLowerCase()))
-        .toList();
+    bool isNew(Source s) => !widget.existing.contains(s.name) && !widget.existing.contains(s.url);
+    final custom = Source.fromInput(_query);
+    final results = [
+      if (custom != null && isNew(custom)) custom,
+      ...searchCatalog.where(isNew).where((s) => s.name.toLowerCase().contains(_query.toLowerCase())),
+    ];
 
     return SheetScaffold(
       child: Column(
@@ -252,7 +255,7 @@ class _SourceSearchSheetState extends State<_SourceSearchSheet> {
             onChanged: (v) => setState(() => _query = v),
             style: AppText.body2.c(AppColors.labelNormal),
             decoration: InputDecoration(
-              hintText: '이름 또는 RSS 주소 검색',
+              hintText: '이름 검색 또는 RSS·유튜브 주소 입력',
               hintStyle: AppText.body2.c(AppColors.labelAssistive),
               prefixIcon: const Icon(Icons.search_rounded, size: 18, color: AppColors.labelAlt),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -304,7 +307,10 @@ class _SourceSearchSheetState extends State<_SourceSearchSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(source.name, style: AppText.label1.w600.c(AppColors.labelNormal)),
-                                  Text(source.protocol, style: AppText.caption1.c(AppColors.labelAlt)),
+                                  Text(
+                                    source == custom ? '${source.protocol} · 직접 추가' : source.protocol,
+                                    style: AppText.caption1.c(AppColors.labelAlt),
+                                  ),
                                 ],
                               ),
                             ),
@@ -328,7 +334,10 @@ class _SourceSearchSheetState extends State<_SourceSearchSheet> {
             onTap: _picked.isEmpty
                 ? null
                 : () {
-                    widget.onAdd(searchCatalog.where((s) => _picked.contains(s.id)).toList());
+                    widget.onAdd([
+                      ?custom,
+                      ...searchCatalog,
+                    ].where((s) => _picked.contains(s.id)).toList());
                     Navigator.pop(context);
                   },
           ),

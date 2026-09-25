@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -57,6 +57,7 @@ class SourceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     name: str
+    url: str
     protocol: str
     glyph: str
     last_collected_at: datetime | None
@@ -106,8 +107,16 @@ class TopicPatch(BaseModel):
 
 class SourceIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    url: AnyHttpUrl
     protocol: Literal["RSS", "YouTube"]
     glyph: str = "🌐"
+
+    @field_validator("url")
+    @classmethod
+    def _fits_column(cls, v: AnyHttpUrl) -> AnyHttpUrl:
+        if len(str(v)) > 500:
+            raise ValueError("주소가 너무 깁니다")
+        return v
 
 
 class ChannelPatch(BaseModel):
@@ -147,16 +156,25 @@ def _seed(db: Session, user: models.User) -> None:
         notify=True,
         sources=[
             models.Source(
-                name="Simon Willison", protocol="RSS", glyph="📰", last_collected_at=_ago(hours=3)
+                name="Simon Willison",
+                url="https://simonwillison.net/atom/everything/",
+                protocol="RSS",
+                glyph="📰",
+                last_collected_at=_ago(hours=3),
             ),
             models.Source(
                 name="Anthropic Engineering",
+                url="https://www.anthropic.com/engineering",
                 protocol="RSS",
                 glyph="🧠",
                 last_collected_at=_ago(hours=1),
             ),
             models.Source(
-                name="Lex Fridman", protocol="YouTube", glyph="🎙", last_collected_at=_ago(days=1)
+                name="Lex Fridman",
+                url="https://www.youtube.com/@lexfridman",
+                protocol="YouTube",
+                glyph="🎙",
+                last_collected_at=_ago(days=1),
             ),
         ],
     )
@@ -168,10 +186,18 @@ def _seed(db: Session, user: models.User) -> None:
         notify=False,
         sources=[
             models.Source(
-                name="Flutter Blog", protocol="RSS", glyph="💙", last_collected_at=_ago(hours=5)
+                name="Flutter Blog",
+                url="https://medium.com/feed/flutter",
+                protocol="RSS",
+                glyph="💙",
+                last_collected_at=_ago(hours=5),
             ),
             models.Source(
-                name="Flutter Dev", protocol="YouTube", glyph="▶️", last_collected_at=_ago(days=2)
+                name="Flutter Dev",
+                url="https://www.youtube.com/@flutterdev",
+                protocol="YouTube",
+                glyph="▶️",
+                last_collected_at=_ago(days=2),
             ),
         ],
     )
@@ -282,7 +308,7 @@ def add_sources(
     db: Session = Depends(get_db),
 ) -> list[models.Source]:
     topic = _own_topic(db, user, topic_id)
-    added = [models.Source(topic_id=topic.id, **s.model_dump()) for s in body]
+    added = [models.Source(topic_id=topic.id, **s.model_dump(mode="json")) for s in body]
     db.add_all(added)
     db.commit()
     for s in added:

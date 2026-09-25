@@ -37,12 +37,14 @@ class ContentItem {
 class Source {
   final String id;
   final String name;
+  final String url;
   final String protocol;
   final DateTime? lastCollectedAt;
   final String glyph;
   const Source({
     required this.id,
     required this.name,
+    required this.url,
     required this.protocol,
     this.lastCollectedAt,
     this.glyph = '🌐',
@@ -51,12 +53,31 @@ class Source {
   factory Source.fromJson(Map<String, dynamic> j) => Source(
         id: j['id'],
         name: j['name'],
+        url: j['url'],
         protocol: j['protocol'],
         glyph: j['glyph'],
         lastCollectedAt: j['last_collected_at'] == null ? null : DateTime.parse(j['last_collected_at']),
       );
 
-  Map<String, dynamic> toJson() => {'name': name, 'protocol': protocol, 'glyph': glyph};
+  Map<String, dynamic> toJson() => {'name': name, 'url': url, 'protocol': protocol, 'glyph': glyph};
+
+  /// 입력이 주소처럼 보이면 직접 추가할 소스를 만든다. 형식 검증은 서버가 한다.
+  // ponytail: 이름은 호스트로 대신한다. 수집기가 생기면 피드 제목으로 바꾼다.
+  static Source? fromInput(String input) {
+    final text = input.trim();
+    if (text.contains(' ') || !text.contains('.')) return null;
+    final uri = Uri.tryParse(text.startsWith('http') ? text : 'https://$text');
+    if (uri == null || uri.host.isEmpty) return null;
+    final host = uri.host.replaceFirst('www.', '');
+    final youtube = host == 'youtube.com' || host == 'm.youtube.com' || host == 'youtu.be';
+    return Source(
+      id: 'custom',
+      name: youtube ? '$host${uri.path}' : host,
+      url: uri.toString(),
+      protocol: youtube ? 'YouTube' : 'RSS',
+      glyph: youtube ? '▶️' : '🌐',
+    );
+  }
 
   String get meta =>
       lastCollectedAt == null ? '$protocol · 수집 대기 중' : '$protocol · 최근 수집 ${_ago(lastCollectedAt!)}';
@@ -310,12 +331,24 @@ class AppStore extends ChangeNotifier {
 final store = AppStore();
 
 const searchCatalog = <Source>[
-  Source(id: 'c1', name: 'Hacker News', protocol: 'RSS', glyph: '🟠'),
-  Source(id: 'c2', name: 'The Verge', protocol: 'RSS', glyph: '🟣'),
-  Source(id: 'c3', name: 'Two Minute Papers', protocol: 'YouTube', glyph: '🎬'),
-  Source(id: 'c4', name: 'Vercel Blog', protocol: 'RSS', glyph: '▲'),
-  Source(id: 'c5', name: 'Fireship', protocol: 'YouTube', glyph: '🔥'),
-  Source(id: 'c6', name: 'Stratechery', protocol: 'RSS', glyph: '📈'),
+  Source(id: 'c1', name: 'GeekNews', url: 'https://news.hada.io/rss/news', protocol: 'RSS', glyph: '🟠'),
+  Source(id: 'c2', name: '요즘IT', url: 'https://yozm.wishket.com/magazine/', protocol: 'RSS', glyph: '🟣'),
+  Source(
+    id: 'c3',
+    name: 'Two Minute Papers',
+    url: 'https://www.youtube.com/@TwoMinutePapers',
+    protocol: 'YouTube',
+    glyph: '🎬',
+  ),
+  Source(id: 'c4', name: '토스 기술 블로그', url: 'https://toss.tech/rss.xml', protocol: 'RSS', glyph: '🔷'),
+  Source(id: 'c5', name: 'Fireship', url: 'https://www.youtube.com/@Fireship', protocol: 'YouTube', glyph: '🔥'),
+  Source(
+    id: 'c6',
+    name: '우아한형제들 기술 블로그',
+    url: 'https://techblog.woowahan.com/feed/',
+    protocol: 'RSS',
+    glyph: '🛵',
+  ),
 ];
 
 final _mockItems = {'llm': _llmItems, 'flutter': _flutterItems};

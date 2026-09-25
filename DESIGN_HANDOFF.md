@@ -135,6 +135,7 @@ sticky 헤더(bg white, 하단 border lineSolid): ← + 주제명 headline2 / �
 ### 소스 관리
 sticky 헤더 + 주제 TabBar(가로 스크롤, 활성 하단 인디케이터 2.5px labelNormal, label1 700/500). 안내 caption1 → 소스 아이템(파비콘 38 r12, 이름 label1/600, 메타 "RSS · 최근 수집 3시간 전", 삭제 아이콘 히트 44) → 하단 고정 Primary "＋ 소스 추가"(위쪽 흰색 그라디언트 페이드).
 플로우 — 삭제 → ConfirmDialog → 토스트 "소스를 삭제했어요" / 추가 → BottomSheet 검색 → 다중 선택 → "N개 추가하기" → 토스트.
+직접 추가 — 검색어가 주소 형태면 결과 맨 위에 입력 주소 행(이름=호스트, 메타 "RSS · 직접 추가" / youtube.com·youtu.be는 "YouTube · 직접 추가")이 생기고 추천 소스와 같이 선택한다. 추가 후 메타는 "수집 대기 중".
 상태 — 소스 0개: EmptyState / 검색 0건: "검색 결과가 없어요".
 
 ### 알림 설정

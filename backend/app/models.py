@@ -83,6 +83,8 @@ class Source(Base):
         ForeignKey("topics.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(120))
+    # 사용자가 입력한 주소 그대로다. 피드 주소인지 사이트 주소인지는 수집기가 판별한다.
+    url: Mapped[str] = mapped_column(String(500))
     protocol: Mapped[str] = mapped_column(String(16))
     glyph: Mapped[str] = mapped_column(String(8), default="🌐")
     last_collected_at: Mapped[datetime | None] = mapped_column(
