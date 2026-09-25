@@ -155,8 +155,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
       message: '${source.name}에서 더 이상 콘텐츠를 수집하지 않아요.',
     );
     if (!ok || !mounted) return;
-    store.removeSource(topic.id, source.id);
-    showToast(context, '소스를 삭제했어요');
+    await saveWithToast(context, () => store.removeSource(topic.id, source.id), '소스를 삭제했어요');
   }
 
   void _openSearchSheet(Topic topic) {
@@ -167,10 +166,11 @@ class _SourcesScreenState extends State<SourcesScreen> {
       barrierColor: AppColors.dimmer,
       builder: (_) => _SourceSearchSheet(
         existing: topic.sources.map((s) => s.name).toSet(),
-        onAdd: (picked) {
-          store.addSources(topic.id, picked);
-          showToast(context, '소스 ${picked.length}개를 추가했어요');
-        },
+        onAdd: (picked) => saveWithToast(
+          context,
+          () => store.addSources(topic.id, picked),
+          '소스 ${picked.length}개를 추가했어요',
+        ),
       ),
     );
   }

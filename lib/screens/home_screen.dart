@@ -228,9 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 final name = controller.text.trim();
                 if (name.isEmpty) return;
-                store.addTopic(name);
                 Navigator.pop(sheetContext);
-                showToast(context, '주제를 추가했어요');
+                saveWithToast(context, () => store.addTopic(name), '주제를 추가했어요');
               },
             ),
           ],

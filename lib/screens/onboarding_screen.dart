@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/api.dart';
 import '../data/store.dart';
 import '../design/app_colors.dart';
 import '../design/app_text.dart';
@@ -247,11 +248,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     });
   }
 
-  void _finish() {
-    store.completeOnboarding(
-      _keywords,
-      searchCatalog.where((s) => _picked.contains(s.id)).toList(),
-    );
-    context.go('/');
+  Future<void> _finish() async {
+    try {
+      await store.completeOnboarding(
+        _keywords,
+        searchCatalog.where((s) => _picked.contains(s.id)).toList(),
+      );
+    } on ApiException catch (e) {
+      if (mounted) showToast(context, e.message);
+      return;
+    }
+    if (mounted) context.go('/');
   }
 }

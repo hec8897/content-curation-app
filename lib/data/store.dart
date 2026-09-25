@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'api.dart';
 
 enum ContentKind { article, youtube }
 
@@ -35,16 +38,37 @@ class Source {
   final String id;
   final String name;
   final String protocol;
-  final String lastCollected;
+  final DateTime? lastCollectedAt;
   final String glyph;
   const Source({
     required this.id,
     required this.name,
     required this.protocol,
-    required this.lastCollected,
+    this.lastCollectedAt,
     this.glyph = '🌐',
   });
-  String get meta => '$protocol · 최근 수집 $lastCollected';
+
+  factory Source.fromJson(Map<String, dynamic> j) => Source(
+        id: j['id'],
+        name: j['name'],
+        protocol: j['protocol'],
+        glyph: j['glyph'],
+        lastCollectedAt: j['last_collected_at'] == null ? null : DateTime.parse(j['last_collected_at']),
+      );
+
+  Map<String, dynamic> toJson() => {'name': name, 'protocol': protocol, 'glyph': glyph};
+
+  String get meta =>
+      lastCollectedAt == null ? '$protocol · 수집 대기 중' : '$protocol · 최근 수집 ${_ago(lastCollectedAt!)}';
+}
+
+String _ago(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return '방금';
+  if (d.inHours < 1) return '${d.inMinutes}분 전';
+  if (d.inDays < 1) return '${d.inHours}시간 전';
+  if (d.inDays == 1) return '어제';
+  return '${d.inDays}일 전';
 }
 
 class Topic {
@@ -63,6 +87,16 @@ class Topic {
     this.items = const [],
     this.notify = true,
   });
+
+  // ponytail: 수집기가 없어 콘텐츠는 slug로 목업을 붙인다. 수집기가 생기면 items를 서버에서 받는다.
+  factory Topic.fromJson(Map<String, dynamic> j) => Topic(
+        id: j['id'],
+        name: j['name'],
+        keywords: List<String>.from(j['keywords']),
+        notify: j['notify'],
+        sources: [for (final s in j['sources']) Source.fromJson(s)],
+        items: _mockItems[j['slug']] ?? const [],
+      );
 }
 
 class NotificationBatch {
@@ -90,50 +124,63 @@ class Channel {
     this.on = false,
     this.account,
   });
+
+  static const _labels = {
+    'email': (name: '이메일', glyph: '✉️'),
+    'slack': (name: 'Slack', glyph: '💬'),
+    'push': (name: '앱 푸시', glyph: '🔔'),
+  };
+
+  factory Channel.fromJson(Map<String, dynamic> j) {
+    final label = _labels[j['kind']]!;
+    return Channel(
+      id: j['kind'],
+      name: label.name,
+      glyph: label.glyph,
+      linked: j['linked'],
+      on: j['enabled'],
+      account: j['account'],
+    );
+  }
 }
 
 String pad2(int n) => n.toString().padLeft(2, '0');
 
-// ponytail: 목업 전용 인메모리 스토어. 백엔드 붙일 때 이 파일만 리포지토리로 교체하면 된다.
 class AppStore extends ChangeNotifier {
+  static const _storage = FlutterSecureStorage();
+
+  // 온보딩 완료는 기기에만 둔다. 계정마다 따로 기억하도록 이메일을 키에 넣는다.
+  // 초기화: `xcrun simctl keychain booted reset` — 토큰도 함께 지워진다.
+  // Keychain이라 앱 재설치로는 지워지지 않는다.
   bool onboarded = false;
+  String _email = '';
+  String get _onboardedKey => 'curator.onboarded:$_email';
 
-  final List<Topic> topics = [
-    Topic(
-      id: 'llm',
-      name: 'LLM 에이전트',
-      keywords: ['LLM', '에이전트', 'RAG'],
-      notify: true,
-      sources: const [
-        Source(id: 's1', name: 'Simon Willison', protocol: 'RSS', lastCollected: '3시간 전', glyph: '📰'),
-        Source(id: 's2', name: 'Anthropic Engineering', protocol: 'RSS', lastCollected: '1시간 전', glyph: '🧠'),
-        Source(id: 's3', name: 'Lex Fridman', protocol: 'YouTube', lastCollected: '어제', glyph: '🎙'),
-      ],
-      items: _llmItems,
-    ),
-    Topic(
-      id: 'flutter',
-      name: 'Flutter 성능',
-      keywords: ['Flutter', 'Impeller'],
-      notify: false,
-      sources: const [
-        Source(id: 's4', name: 'Flutter Blog', protocol: 'RSS', lastCollected: '5시간 전', glyph: '💙'),
-        Source(id: 's5', name: 'Flutter Dev', protocol: 'YouTube', lastCollected: '2일 전', glyph: '▶️'),
-      ],
-      items: _flutterItems,
-    ),
-    Topic(id: 'design', name: '디자인 시스템', keywords: ['디자인 토큰'], sources: const [], items: const []),
-  ];
-
-  final List<Channel> channels = [
-    Channel(id: 'email', name: '이메일', glyph: '✉️', linked: true, on: true, account: 'dawoon@example.com'),
-    Channel(id: 'slack', name: 'Slack', glyph: '💬'),
-    Channel(id: 'push', name: '앱 푸시', glyph: '🔔', linked: true, on: false),
-  ];
+  List<Topic> topics = [];
+  List<Channel> channels = [];
 
   SendCycle cycle = SendCycle.daily;
   int sendHour = 8;
   int sendMinute = 0;
+
+  Future<void> load() async {
+    final b = await request('GET', '/bootstrap');
+    _email = b['email'];
+    topics = [for (final t in b['topics']) Topic.fromJson(t)];
+    // 서버는 kind 알파벳순이라 디자인 순서(이메일·Slack·푸시)로 다시 정렬한다.
+    final order = Channel._labels.keys.toList();
+    channels = [for (final c in b['channels']) Channel.fromJson(c)]
+      ..sort((a, b) => order.indexOf(a.id).compareTo(order.indexOf(b.id)));
+    _applySettings(b['settings']);
+    onboarded = await _storage.read(key: _onboardedKey) != null;
+    notifyListeners();
+  }
+
+  void _applySettings(Map<String, dynamic> s) {
+    cycle = SendCycle.values.byName(s['cycle']);
+    sendHour = s['send_hour'];
+    sendMinute = s['send_minute'];
+  }
 
   Topic topic(String id) => topics.firstWhere((t) => t.id == id);
 
@@ -194,80 +241,84 @@ class AppStore extends ChangeNotifier {
     return '지금 설정: $cycleLabel $timeLabel, $names 채널로 주제 $notifyingTopicCount개의 새 콘텐츠를 보내드려요';
   }
 
-  void completeOnboarding(List<String> keywords, List<Source> picked) {
-    onboarded = true;
+  Future<void> completeOnboarding(List<String> keywords, List<Source> picked) async {
     if (keywords.isNotEmpty) {
-      topics.insert(
-        0,
-        Topic(
-          id: 'new-${DateTime.now().millisecondsSinceEpoch}',
-          name: keywords.first,
-          keywords: keywords,
-          sources: picked,
-          items: const [],
-        ),
-      );
+      final t = Topic.fromJson(await request('POST', '/topics', {'name': keywords.first, 'keywords': keywords}));
+      if (picked.isNotEmpty) t.sources = await _postSources(t.id, picked);
+      topics.add(t);
     }
+    await _storage.write(key: _onboardedKey, value: '1');
+    onboarded = true;
     notifyListeners();
   }
 
-  void addSources(String topicId, List<Source> picked) {
+  Future<List<Source>> _postSources(String topicId, List<Source> picked) async => [
+        for (final s in await request('POST', '/topics/$topicId/sources', [for (final p in picked) p.toJson()]))
+          Source.fromJson(s),
+      ];
+
+  Future<void> addSources(String topicId, List<Source> picked) async {
+    final added = await _postSources(topicId, picked);
     final t = topic(topicId);
-    t.sources = [...t.sources, ...picked];
+    t.sources = [...t.sources, ...added];
     notifyListeners();
   }
 
-  void removeSource(String topicId, String sourceId) {
+  Future<void> removeSource(String topicId, String sourceId) async {
+    await request('DELETE', '/sources/$sourceId');
     final t = topic(topicId);
     t.sources = t.sources.where((s) => s.id != sourceId).toList();
     notifyListeners();
   }
 
-  void addTopic(String name) {
-    topics.add(Topic(id: 'new-${DateTime.now().millisecondsSinceEpoch}', name: name));
+  Future<void> addTopic(String name) async {
+    topics.add(Topic.fromJson(await request('POST', '/topics', {'name': name})));
     notifyListeners();
   }
 
-  void toggleTopicNotify(String topicId, bool value) {
+  Future<void> toggleTopicNotify(String topicId, bool value) async {
+    await request('PATCH', '/topics/$topicId', {'notify': value});
     topic(topicId).notify = value;
     notifyListeners();
   }
 
-  void toggleChannel(String id, bool value) {
-    channels.firstWhere((c) => c.id == id).on = value;
+  Future<void> _patchChannel(String id, Map<String, dynamic> body) async {
+    final updated = Channel.fromJson(await request('PATCH', '/channels/$id', body));
+    channels = [for (final c in channels) c.id == id ? updated : c];
     notifyListeners();
   }
 
-  void linkChannel(String id) {
-    final c = channels.firstWhere((ch) => ch.id == id);
-    c.linked = true;
-    c.on = true;
-    c.account = c.id == 'slack' ? '#curation 채널' : 'dawoon@example.com';
+  Future<void> toggleChannel(String id, bool value) => _patchChannel(id, {'enabled': value});
+
+  // ponytail: 실제 OAuth 연동 전이라 계정 표기만 채운다. 연동이 생기면 서버가 account를 정한다.
+  Future<void> linkChannel(String id) => _patchChannel(id, {
+        'linked': true,
+        'enabled': true,
+        'account': id == 'slack' ? '#curation 채널' : _email,
+      });
+
+  Future<void> _patchSettings(Map<String, dynamic> body) async {
+    _applySettings(await request('PATCH', '/settings', body));
     notifyListeners();
   }
 
-  void setCycle(SendCycle c) {
-    cycle = c;
-    notifyListeners();
-  }
+  Future<void> setCycle(SendCycle c) => _patchSettings({'cycle': c.name});
 
-  void setTime(int hour, int minute) {
-    sendHour = hour;
-    sendMinute = minute;
-    notifyListeners();
-  }
+  Future<void> setTime(int hour, int minute) => _patchSettings({'send_hour': hour, 'send_minute': minute});
 }
 
 final store = AppStore();
 
 const searchCatalog = <Source>[
-  Source(id: 'c1', name: 'Hacker News', protocol: 'RSS', lastCollected: '방금', glyph: '🟠'),
-  Source(id: 'c2', name: 'The Verge', protocol: 'RSS', lastCollected: '방금', glyph: '🟣'),
-  Source(id: 'c3', name: 'Two Minute Papers', protocol: 'YouTube', lastCollected: '방금', glyph: '🎬'),
-  Source(id: 'c4', name: 'Vercel Blog', protocol: 'RSS', lastCollected: '방금', glyph: '▲'),
-  Source(id: 'c5', name: 'Fireship', protocol: 'YouTube', lastCollected: '방금', glyph: '🔥'),
-  Source(id: 'c6', name: 'Stratechery', protocol: 'RSS', lastCollected: '방금', glyph: '📈'),
+  Source(id: 'c1', name: 'Hacker News', protocol: 'RSS', glyph: '🟠'),
+  Source(id: 'c2', name: 'The Verge', protocol: 'RSS', glyph: '🟣'),
+  Source(id: 'c3', name: 'Two Minute Papers', protocol: 'YouTube', glyph: '🎬'),
+  Source(id: 'c4', name: 'Vercel Blog', protocol: 'RSS', glyph: '▲'),
+  Source(id: 'c5', name: 'Fireship', protocol: 'YouTube', glyph: '🔥'),
+  Source(id: 'c6', name: 'Stratechery', protocol: 'RSS', glyph: '📈'),
 ];
+
+final _mockItems = {'llm': _llmItems, 'flutter': _flutterItems};
 
 final _llmItems = <ContentItem>[
   ContentItem(

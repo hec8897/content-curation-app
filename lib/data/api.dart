@@ -6,6 +6,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
+import 'store.dart';
+
 // 설정값은 env.json에서 온다. 실행할 때 파일을 넘겨야 한다:
 //   flutter run -d "iPhone 17" --dart-define-from-file=env.json
 // 항목 설명은 env.example.json 참고. 플래그를 빼면 값이 전부 빈 문자열이 되고,
@@ -45,8 +47,8 @@ class ApiException implements Exception {
 }
 
 /// 서버 응답을 해석한다. FastAPI는 오류를 `{"detail": ...}`로 돌려준다.
-Map<String, dynamic> _decode(http.Response res) {
-  final body = res.body.isEmpty ? const <String, dynamic>{} : jsonDecode(res.body);
+dynamic _decode(http.Response res) {
+  final body = res.body.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
   if (res.statusCode >= 400) {
     final detail = body is Map ? body['detail'] : null;
     // 422는 detail이 필드별 오류 배열이라 그대로 보여주면 읽을 수 없다.
@@ -55,18 +57,20 @@ Map<String, dynamic> _decode(http.Response res) {
       statusCode: res.statusCode,
     );
   }
-  return body as Map<String, dynamic>;
+  return body;
 }
 
-Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body, {String? token}) async {
-  final res = await http.post(
-    _url(path),
-    headers: {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    },
-    body: jsonEncode(body),
-  );
+/// 저장된 토큰을 붙여 백엔드를 호출한다. 응답 본문이 없으면 null.
+Future<dynamic> request(String method, String path, [Object? body]) async {
+  final req = http.Request(method, _url(path))..headers['Content-Type'] = 'application/json';
+  if (auth.token != null) req.headers['Authorization'] = 'Bearer ${auth.token}';
+  if (body != null) req.body = jsonEncode(body);
+  final http.Response res;
+  try {
+    res = await http.Response.fromStream(await req.send());
+  } on http.ClientException {
+    throw ApiException('서버에 연결할 수 없어요');
+  }
   return _decode(res);
 }
 
@@ -94,14 +98,28 @@ class Auth extends ChangeNotifier {
 
   Future<void> restore() async {
     _token = await _storage.read(key: _tokenKey);
-    notifyListeners();
+    if (_token == null) return;
+    try {
+      await store.load();
+    } catch (_) {
+      // ponytail: 만료 토큰이든 서버 미기동이든 로그인 화면으로 보낸다. 서버가 꺼져 있으면
+      // 토큰을 잃는다 — 오프라인 지원이 필요해지면 401만 로그아웃하고 나머지는 재시도 UI로.
+      await signOut();
+    }
   }
 
-  /// 로그인·가입 공통 뒤처리. 서버가 준 우리 JWT를 저장한다.
-  Future<void> _accept(Map<String, dynamic> response) async {
+  /// 로그인·가입 공통 뒤처리. 서버가 준 우리 JWT를 저장하고 사용자 데이터를 불러온다.
+  /// 로드가 끝난 뒤에 알려야 라우터가 온보딩 여부를 올바로 판단한다 — 알림은 `_run`이 한다.
+  Future<void> _accept(dynamic response) async {
     final token = response['token'] as String;
-    await _storage.write(key: _tokenKey, value: token);
     _token = token;
+    try {
+      await store.load();
+    } catch (_) {
+      _token = null;
+      rethrow;
+    }
+    await _storage.write(key: _tokenKey, value: token);
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -117,11 +135,11 @@ class Auth extends ChangeNotifier {
   }
 
   Future<void> signUpWithEmail(String email, String password) => _run(() async {
-    await _accept(await _post('/auth/signup', {'email': email, 'password': password}));
+    await _accept(await request('POST', '/auth/signup', {'email': email, 'password': password}));
   });
 
   Future<void> signInWithEmail(String email, String password) => _run(() async {
-    await _accept(await _post('/auth/login', {'email': email, 'password': password}));
+    await _accept(await request('POST', '/auth/login', {'email': email, 'password': password}));
   });
 
   /// Google 계정으로 로그인한다. 사용자가 취소하면 아무 일도 일어나지 않는다.
@@ -143,7 +161,7 @@ class Auth extends ChangeNotifier {
       // serverClientId가 비어 있거나 잘못되면 Google이 ID 토큰을 주지 않는다.
       throw ApiException('Google이 ID 토큰을 주지 않았습니다. serverClientId 설정을 확인해주세요');
     }
-    await _accept(await _post('/auth/google', {'id_token': idToken}));
+    await _accept(await request('POST', '/auth/google', {'id_token': idToken}));
   });
 
   Future<void> signOut() async {
