@@ -5,7 +5,7 @@ UI 목업으로 시작해 기능을 하나씩 붙이는 중이다.
 
 - **`backend/`** — FastAPI + Postgres. 인증과 사용자 설정(주제·소스·채널·발송 스케줄)이 실제로 저장된다.
 - **`lib/`** — Flutter 앱. 아직 인메모리 스토어를 쓴다. 백엔드 연결은 미완료.
-- 콘텐츠 수집·AI 요약·실제 발송은 아직 없다. 화면에 보이는 아티클은 목업 데이터다.
+- 콘텐츠는 등록한 RSS·YouTube 소스에서 실제로 수집하고 OpenAI로 요약한다. 수집은 주제 상세의 ↻ 버튼으로만 돌고, 자동 수집과 실제 발송은 아직 없다.
 
 ## 실행
 
@@ -50,7 +50,7 @@ lib/
   app.dart                 라우터(StatefulShellRoute 4탭) + 탭바
   design/app_colors.dart   색 토큰 + 섀도우
   design/app_text.dart     타이포 토큰 + weight/color 확장
-  data/store.dart          모델 + 목업 데이터 + ChangeNotifier 스토어
+  data/store.dart          모델 + ChangeNotifier 스토어
   widgets/basics.dart      버튼·칩·토글·라디오·빈 상태·스켈레톤·토스트·다이얼로그·바텀시트
   widgets/content_card.dart  ContentCard (compact / list)
   screens/                 7개 화면
@@ -78,7 +78,7 @@ lib/
 - **Pretendard 미번들** — 시스템 한글 폰트로 폴백한다. `assets/fonts/Pretendard-*.otf` 추가 후 `pubspec.yaml`에 `fonts:` 선언만 하면 적용된다.
 - **썸네일이 이모지 플레이스홀더** — 실제 이미지가 들어오면 `ThumbBox` 하나만 교체하면 된다. 아이콘도 핸드오프 노트대로 24px 라인 아이콘셋 전달 대기 중.
 - **레이아웃 오버플로** — 알림 설정 화면의 미연동 채널 행에서 안내문 + "연동하기 ›"가 가로로 넘친다. 수정 예정.
-- **주제 상세 무한 스크롤 미구현** — 목업 데이터가 페이지 크기(10)보다 적어 종료 문구만 둔 상태.
+- **주제 상세 무한 스크롤 미구현** — 서버가 주제당 최신 50건을 한 번에 줘서 종료 문구만 둔 상태.
 - **온보딩 완료 여부는 기기에만 저장된다** — 다른 기기에서 로그인하면 온보딩이 다시 뜬다. 시뮬레이터 초기화는 `xcrun simctl keychain booted reset`.
 
 코드에 `ponytail:` 주석이 붙은 곳은 의도적으로 단순화한 지점이고, 주석에 확장 방법이 적혀 있다.

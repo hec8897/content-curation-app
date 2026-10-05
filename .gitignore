@@ -49,3 +49,6 @@ app.*.map.json
 
 # Flutter 빌드 설정값 (--dart-define-from-file). env.example.json이 템플릿이다.
 env.json
+
+# Claude Code worktree
+.claude/worktrees/
