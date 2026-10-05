@@ -5,14 +5,18 @@ import 'api.dart';
 
 enum ContentKind { article, youtube }
 
+enum SummaryStatus { pending, done, failed }
+
 class ContentItem {
   final String id;
   final String title;
   final String source;
   final ContentKind kind;
   final DateTime publishedAt;
-  final DateTime sentAt;
-  final String summary;
+  // ponytail: 발송이 없어 수집 시각이 발송 시각 자리를 대신한다. 발송이 생기면 발송 기록의 시각으로 바꾼다.
+  final DateTime collectedAt;
+  final String? summary;
+  final SummaryStatus summaryStatus;
   final String url;
   final String glyph;
 
@@ -22,11 +26,25 @@ class ContentItem {
     required this.source,
     required this.kind,
     required this.publishedAt,
-    required this.sentAt,
+    required this.collectedAt,
     required this.summary,
+    required this.summaryStatus,
     required this.url,
     this.glyph = '📄',
   });
+
+  factory ContentItem.fromJson(Map<String, dynamic> j) => ContentItem(
+        id: j['id'],
+        title: j['title'],
+        source: j['source']['name'],
+        kind: j['source']['protocol'] == 'YouTube' ? ContentKind.youtube : ContentKind.article,
+        glyph: j['source']['glyph'],
+        publishedAt: DateTime.parse(j['published_at']).toLocal(),
+        collectedAt: DateTime.parse(j['collected_at']).toLocal(),
+        summary: j['summary'],
+        summaryStatus: SummaryStatus.values.byName(j['summary_status']),
+        url: j['url'],
+      );
 
   String get kindLabel => kind == ContentKind.youtube ? '유튜브' : '아티클';
   String get dateLabel =>
@@ -109,14 +127,13 @@ class Topic {
     this.notify = true,
   });
 
-  // ponytail: 수집기가 없어 콘텐츠는 slug로 목업을 붙인다. 수집기가 생기면 items를 서버에서 받는다.
   factory Topic.fromJson(Map<String, dynamic> j) => Topic(
         id: j['id'],
         name: j['name'],
         keywords: List<String>.from(j['keywords']),
         notify: j['notify'],
         sources: [for (final s in j['sources']) Source.fromJson(s)],
-        items: _mockItems[j['slug']] ?? const [],
+        items: [for (final i in j['items']) ContentItem.fromJson(i)],
       );
 }
 
@@ -205,23 +222,20 @@ class AppStore extends ChangeNotifier {
 
   Topic topic(String id) => topics.firstWhere((t) => t.id == id);
 
-  List<ContentItem> get digest =>
-      topics.expand((t) => t.items).where((i) => i.sentAt.day == 14).toList();
+  // ponytail: 발송 기록이 없어 "최근 24시간 수집분"을 다이제스트로 보여준다. 발송이 생기면 발송 기록으로 바꾼다.
+  List<ContentItem> get digest {
+    final since = DateTime.now().subtract(const Duration(hours: 24));
+    return topics.expand((t) => t.items).where((i) => i.collectedAt.isAfter(since)).toList();
+  }
 
   List<NotificationBatch> get history {
-    final all = topics.expand((t) => t.items).toList();
-    final byDay = <int, List<ContentItem>>{};
-    for (final i in all) {
-      byDay.putIfAbsent(i.sentAt.day, () => []).add(i);
+    final byDay = <DateTime, List<ContentItem>>{};
+    for (final i in topics.expand((t) => t.items)) {
+      final c = i.collectedAt;
+      byDay.putIfAbsent(DateTime(c.year, c.month, c.day), () => []).add(i);
     }
     final days = byDay.keys.toList()..sort((a, b) => b.compareTo(a));
-    return days
-        .map((d) => NotificationBatch(
-              date: DateTime(2026, 9, d),
-              channel: '이메일',
-              items: byDay[d]!,
-            ))
-        .toList();
+    return [for (final d in days) NotificationBatch(date: d, channel: '이메일', items: byDay[d]!)];
   }
 
   ContentItem? item(String id) {
@@ -292,6 +306,23 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 주제의 소스를 지금 수집한다. 새로 들어온 콘텐츠 수를 돌려준다.
+  Future<int> collect(String topicId) async {
+    final before = topic(topicId).items.map((i) => i.id).toSet();
+    final updated = Topic.fromJson(await request('POST', '/topics/$topicId/collect'));
+    topics = [for (final t in topics) t.id == topicId ? updated : t];
+    notifyListeners();
+    return updated.items.where((i) => !before.contains(i.id)).length;
+  }
+
+  void replaceItem(ContentItem updated) {
+    for (final t in topics) {
+      final i = t.items.indexWhere((x) => x.id == updated.id);
+      if (i >= 0) t.items[i] = updated;
+    }
+    notifyListeners();
+  }
+
   Future<void> addTopic(String name) async {
     topics.add(Topic.fromJson(await request('POST', '/topics', {'name': name})));
     notifyListeners();
@@ -351,84 +382,3 @@ const searchCatalog = <Source>[
   ),
 ];
 
-final _mockItems = {'llm': _llmItems, 'flutter': _flutterItems};
-
-final _llmItems = <ContentItem>[
-  ContentItem(
-    id: 'a1',
-    title: '에이전트 루프를 단순하게 유지하는 방법: 툴 호출 설계 원칙 7가지',
-    source: 'Simon Willison',
-    kind: ContentKind.article,
-    publishedAt: DateTime(2026, 9, 12),
-    sentAt: DateTime(2026, 9, 14),
-    glyph: '🧩',
-    url: 'https://simonwillison.net',
-    summary:
-        '에이전트가 복잡해지는 원인은 대부분 툴 스키마가 모호해서 생기는 재시도다. 저자는 툴을 명사가 아니라 동사 단위로 쪼개고, '
-        '실패 응답에 다음 행동을 명시하라고 권한다. 또한 상태를 프롬프트가 아닌 외부 저장소에 두면 루프가 짧아진다는 실측을 함께 제시한다.',
-  ),
-  ContentItem(
-    id: 'a2',
-    title: 'RAG는 죽지 않았다 — 긴 컨텍스트 모델과 검색을 함께 쓰는 실전 구성',
-    source: 'Anthropic Engineering',
-    kind: ContentKind.article,
-    publishedAt: DateTime(2026, 9, 13),
-    sentAt: DateTime(2026, 9, 14),
-    glyph: '🔍',
-    url: 'https://www.anthropic.com/engineering',
-    summary:
-        '컨텍스트 창이 커져도 검색은 여전히 비용과 정확도 양쪽에서 이득이다. 핵심은 검색 결과를 문서 단위가 아닌 '
-        '질문 단위로 재구성하는 것. 캐싱과 결합하면 동일 품질에서 토큰 비용을 60%까지 줄인 사례를 소개한다.',
-  ),
-  ContentItem(
-    id: 'a3',
-    title: '[영상] 에이전트 평가를 자동화한 1년의 기록',
-    source: 'Lex Fridman',
-    kind: ContentKind.youtube,
-    publishedAt: DateTime(2026, 9, 11),
-    sentAt: DateTime(2026, 9, 14),
-    glyph: '🎙',
-    url: 'https://youtube.com',
-    summary:
-        '수동 QA로는 회귀를 잡을 수 없다는 문제의식에서 출발해, LLM 심판을 이중화하고 사람 라벨을 샘플링으로만 쓰는 파이프라인을 설명한다. '
-        '지표 하나에 최적화하면 반드시 다른 축이 무너진다는 경고가 인상적이다.',
-  ),
-  ContentItem(
-    id: 'a4',
-    title: '툴 사용 모델의 실패 모드 분류: 환각·과호출·조기 종료',
-    source: 'Simon Willison',
-    kind: ContentKind.article,
-    publishedAt: DateTime(2026, 9, 8),
-    sentAt: DateTime(2026, 9, 7),
-    glyph: '🧪',
-    url: 'https://simonwillison.net',
-    summary: '실패를 세 갈래로 나누면 각각 다른 처방이 필요하다는 점을 실제 트레이스로 보여준다.',
-  ),
-];
-
-final _flutterItems = <ContentItem>[
-  ContentItem(
-    id: 'b1',
-    title: 'Impeller가 셰이더 컴파일 재킹크를 없앤 방식',
-    source: 'Flutter Blog',
-    kind: ContentKind.article,
-    publishedAt: DateTime(2026, 9, 13),
-    sentAt: DateTime(2026, 9, 14),
-    glyph: '💙',
-    url: 'https://medium.com/flutter',
-    summary:
-        '런타임 셰이더 컴파일을 빌드 타임으로 옮긴 것이 핵심이다. 파이프라인을 미리 알 수 있는 구조로 바꿨기 때문에 '
-        '첫 프레임 재킹크가 구조적으로 사라졌다는 설명과 함께 프로파일 캡처 방법을 안내한다.',
-  ),
-  ContentItem(
-    id: 'b2',
-    title: '[영상] 리스트 성능을 3배 올린 리빌드 추적법',
-    source: 'Flutter Dev',
-    kind: ContentKind.youtube,
-    publishedAt: DateTime(2026, 9, 10),
-    sentAt: DateTime(2026, 9, 7),
-    glyph: '▶️',
-    url: 'https://youtube.com',
-    summary: 'DevTools 리빌드 카운터로 범인을 좁히고, const 위젯과 키 전략으로 해결하는 과정을 실시간으로 보여준다.',
-  ),
-];

@@ -15,17 +15,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    // ponytail: 목업용 로딩 상태 시연 — 실제로는 리포지토리 future로 대체.
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _loading = false);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -51,60 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            if (_loading) ..._loadingBody() else ..._body(),
+            ..._body(),
           ],
         ),
       ),
     );
   }
-
-  List<Widget> _loadingBody() => [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.primary, width: 1.5),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              Container(height: 54, color: AppColors.primaryTint),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Column(
-                  children: List.generate(
-                    2,
-                    (_) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      child: Row(
-                        children: [
-                          const Skeleton(width: 56, height: 44),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Skeleton(width: double.infinity, height: 14, radius: 4),
-                                SizedBox(height: 6),
-                                Skeleton(width: 120, height: 12, radius: 4),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Skeleton(width: 140, height: 20, radius: 4),
-        const SizedBox(height: 12),
-        const Skeleton(width: double.infinity, height: 68, radius: 16),
-        const SizedBox(height: 10),
-        const Skeleton(width: double.infinity, height: 68, radius: 16),
-      ];
 
   List<Widget> _body() {
     final digest = store.digest;

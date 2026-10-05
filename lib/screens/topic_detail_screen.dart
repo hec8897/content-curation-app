@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/api.dart';
 import '../data/store.dart';
 import '../design/app_colors.dart';
 import '../design/app_text.dart';
@@ -20,6 +21,18 @@ class TopicDetailScreen extends StatefulWidget {
 class _TopicDetailScreenState extends State<TopicDetailScreen> {
   _Filter _filter = _Filter.all;
   bool _byRelevance = false;
+  bool _collecting = false;
+
+  Future<void> _collect(String topicId) async {
+    setState(() => _collecting = true);
+    try {
+      final added = await store.collect(topicId);
+      if (mounted) showToast(context, added > 0 ? '새 콘텐츠 $added건을 가져왔어요' : '새 콘텐츠가 없어요');
+    } on ApiException catch (e) {
+      if (mounted) showToast(context, e.message);
+    }
+    if (mounted) setState(() => _collecting = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +72,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             ],
                             const SizedBox(height: 10),
                           ],
-                          // ponytail: 목업 데이터가 페이지 크기(10)보다 적어 무한 스크롤 대신 종료 문구만 둔다.
+                          // ponytail: 서버가 주제당 최신 50건을 한 번에 준다. 무한 스크롤은 페이지 API가 생길 때 붙인다.
                           Center(
                             child: Text('마지막 콘텐츠예요',
                                 style: AppText.caption1.c(AppColors.labelAssistive)),
@@ -83,15 +96,21 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     if (_byRelevance) {
       items.sort((a, b) => a.title.length.compareTo(b.title.length));
     } else {
-      items.sort((a, b) => b.sentAt.compareTo(a.sentAt));
+      // 수집일 그룹 안에서 발행 최신순.
+      items.sort((a, b) {
+        final byDay = _day(b.collectedAt).compareTo(_day(a.collectedAt));
+        return byDay != 0 ? byDay : b.publishedAt.compareTo(a.publishedAt);
+      });
     }
     return items;
   }
 
+  DateTime _day(DateTime t) => DateTime(t.year, t.month, t.day);
+
   List<MapEntry<String, List<ContentItem>>> _group(List<ContentItem> items) {
     final map = <String, List<ContentItem>>{};
     for (final i in items) {
-      map.putIfAbsent('${i.sentAt.month}월 ${i.sentAt.day}일 발송', () => []).add(i);
+      map.putIfAbsent('${i.collectedAt.month}월 ${i.collectedAt.day}일 수집', () => []).add(i);
     }
     return map.entries.toList();
   }
@@ -121,6 +140,24 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
               ],
             ),
           ),
+          GestureDetector(
+            onTap: _collecting ? null : () => _collect(topic.id),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(color: AppColors.bgAlt, shape: BoxShape.circle),
+              child: _collecting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.labelNeutral),
+                    )
+                  : const Icon(Icons.refresh_rounded, size: 18, color: AppColors.labelNeutral),
+            ),
+          ),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => context.go('/sources?topicId=${topic.id}'),
             behavior: HitTestBehavior.opaque,
