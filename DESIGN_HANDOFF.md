@@ -125,7 +125,7 @@ AppBar 없이 타이틀 heading1 + ⚙ 아이콘 버튼(36 r999, bg bgAlt). 다�
 상태 — loading: 다이제스트 스켈레톤 + 주제 행 2개 / 주제 0개: EmptyState("아직 주제가 없어요" + 주제 등록하기) / 소스 0개 주제 행: 라벨·메타 labelAssistive, 메타 "소스 0 — 소스를 추가해 주세요" / 알림 OFF 주제: 우측 "알림 OFF" 배지(fill r999 caption2).
 
 ### 주제 상세
-sticky 헤더(bg white, 하단 border lineSolid): ← + 주제명 headline2 / 서브 "소스 N · 알림 ON" caption1 + 🗂 버튼(→ 소스 관리, 해당 주제 선택). 필터 행: FilterChip 전체/유튜브/아티클 + 우측 정렬 토글(최신순 ↔ 관련도순). 본문은 발송일 그룹 헤더(label2/700 primary + 1px 라인) + list 카드. 무한 스크롤 page size 10.
+sticky 헤더(bg white, 하단 border lineSolid): ← + 주제명 headline2 / 서브 "소스 N · 알림 ON" caption1 + ↻ 수집 버튼(🗂와 같은 36 원형 bgAlt, 누르는 동안 16px 스피너, 끝나면 토스트 "새 콘텐츠 N건을 가져왔어요" / "새 콘텐츠가 없어요") + 🗂 버튼(→ 소스 관리, 해당 주제 선택), 버튼 간격 8. 필터 행: FilterChip 전체/유튜브/아티클 + 우측 정렬 토글(최신순 ↔ 관련도순). 본문은 발송일 그룹 헤더(label2/700 primary + 1px 라인) + list 카드. 발송 기능 전까지는 수집일로 묶고 라벨은 "9월 28일 수집". 무한 스크롤 page size 10.
 상태 — 결과 0건: "조건에 맞는 콘텐츠가 없어요" dashed / 리스트 끝: "마지막 콘텐츠예요" caption1 labelAssistive.
 
 ### 아티클 상세

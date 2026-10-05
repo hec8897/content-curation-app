@@ -12,7 +12,8 @@ Started as a pure UI mockup and is being wired up one piece at a time. What exis
 - **`backend/`** — FastAPI + Postgres. 인증과 사용자 소유 데이터(주제·소스·채널·발송 설정)가 실제로 저장된다.
 - **`lib/`** — Flutter 앱. `AppStore`가 로그인 직후 `GET /bootstrap`으로 불러오고, 변경은 서버 응답을 받은 뒤 반영한다.
   온보딩 완료 여부만 기기 Keychain(`curator.onboarded:<email>`)에 둔다 — 초기화는 `xcrun simctl keychain booted reset`.
-- **콘텐츠 아이템** — 수집기가 없어 여전히 `store.dart`의 목업 상수다. AI 요약도 `Future.delayed` 흉내.
+- **콘텐츠 아이템** — 백엔드가 소스 피드에서 수집해 `items`에 저장하고 OpenAI로 관련성 판단 + 한국어 요약을 붙인다.
+  수집은 주제 상세의 ↻ 버튼(`POST /topics/{id}/collect`)으로만 돈다 — 자동 주기 수집은 아직 없다.
 
 ```bash
 cp env.example.json env.json    # 최초 1회. Google 클라이언트 ID를 채운다
@@ -60,6 +61,8 @@ Google 로그인만 503이 되고 나머지는 정상 동작하므로 원인을 
 |---|---|
 | `JWT_SECRET` | **기동 거부.** 빈 키로 서명하면 토큰이 위조 가능하고, 고정 기본값은 그대로 배포된다 |
 | `GOOGLE_CLIENT_ID` | Google 로그인 라우트만 503. 나머지는 정상 동작 |
+| `OPENAI_API_KEY` | 요약만 건너뛴다. 수집은 정상이지만 판단 전 아이템은 앱에 안 보인다 |
+| `SUMMARY_MODEL` | `gpt-5.6-luna` |
 | `DATABASE_URL` | 위 표의 로컬 Postgres 기본값 사용 |
 
 DBeaver가 이미 설치돼 있다 — 위 값으로 PostgreSQL 연결을 만들면 된다. 터미널이 편하면
@@ -75,9 +78,39 @@ docker compose down -v   # DB 정지 + 데이터 삭제. 스키마를 바꿨으�
 지울 수 없는 데이터가 생기는 시점에 Alembic을 도입한다.
 
 라우트는 `app/main.py` 한 파일에 있고, Flutter `AppStore`의 상태 변경 메서드와 1:1로 대응한다.
-`GET /bootstrap`이 주제·소스·채널·설정을 한 번에 돌려주므로 앱 진입 시 왕복이 한 번이면 된다.
+`GET /bootstrap`이 주제·소스·채널·설정과 주제별 최신 아이템 50건을 한 번에 돌려주므로 앱 진입 시 왕복이 한 번이면 된다.
+
+수집 파이프라인은 `collector.py` → `summarizer.py`다.
+
+- **수집:** 소스 `url`이 피드면 그대로, 사이트면 HTML의 `<link rel="alternate">`로 피드를 찾아 `sources.feed_url`에 저장한다.
+  YouTube 채널 페이지도 이 링크를 노출하므로 **YouTube API 키 없이** RSS와 같은 경로다. 중복은 `(source_id, guid)` 유니크 제약이 막는다.
+  한 소스가 실패해도 나머지는 계속 수집하고, 전부 실패할 때만 502다.
+- **요약:** 수집 요청 안에서 새 아이템을 스레드 8개로 전부 판단한 뒤 응답한다(첫 수집 ~40초, 재수집은 새 글만이라 1초 안팎).
+  한 번의 호출로 `{relevant, summary}`를 받고, 앱에는 관련 판정과 3회 실패한 아이템만 내보낸다 — 판단 전·무관은 안 보인다.
+  실패는 같은 요청 안에서 3회까지 재시도하고, 이후는 아티클 상세의 "다시 시도"(`POST /items/{id}/summarize`)로만.
 
 모든 변경 라우트는 소유권을 검사한다 — 남의 주제·소스는 404다. 이 검사를 우회하는 라우트를 새로 만들지 말 것.
+
+## 작업은 worktree에서
+
+`main`에서 직접 고치지 않는다. 새 작업은 worktree를 만들어(`EnterWorktree`, 위치 `.claude/worktrees/`) 브랜치에서 하고 PR로 합친다.
+문서 오탈자 같은 한 줄 수정만 예외.
+
+새 worktree에는 gitignore된 파일이 없다. 만들자마자 복사한다:
+
+```bash
+cp ../../../env.json .                       # 없으면 Google 버튼이 조용히 비활성화
+cp ../../../backend/.env backend/            # 없으면 JWT_SECRET 부재로 기동 거부
+flutter pub get
+```
+
+- **Postgres 컨테이너는 모든 worktree가 공유한다**(5432). 스키마를 바꾸는 worktree에서 `down -v`를 하면
+  다른 worktree 데이터도 날아가므로, 대신 **같은 컨테이너에 worktree 전용 DB를 만든다**:
+  `docker exec backend-db-1 psql -U curator -d curator -c "create database curator_<이름>"` 후
+  그 worktree의 `backend/.env`에 `DATABASE_URL=postgresql+psycopg://curator:curator@localhost:5432/curator_<이름>`.
+  스키마를 다시 만들 땐 `drop database`/`create database`로 그 DB만 초기화한다.
+- 백엔드를 동시에 두 개 띄우면 포트가 겹친다 — 두 번째는 `--port 8001`로 띄우고 그 worktree의 `env.json`에 `"API_BASE": "http://localhost:8001"`.
+- `backend/.venv`는 worktree마다 따로 생긴다. 첫 `uv run`이 알아서 만든다.
 
 ## Design is a contract, not a suggestion
 
@@ -95,16 +128,18 @@ lib/
   app.dart                   GoRouter + StatefulShellRoute 4탭 + 탭바
   design/app_colors.dart     색 토큰, cardShadow / sheetShadow
   design/app_text.dart       타이포 토큰 + .w600 / .c(color) 확장
-  data/store.dart            모델 + 목업 데이터 + AppStore(ChangeNotifier)
+  data/store.dart            모델 + AppStore(ChangeNotifier) + 소스 추천 목록
   widgets/basics.dart        ThumbBox, 배지, 칩, 버튼, 토글, RadioRow, EmptyState,
                              Skeleton, DashedBox, showToast, showConfirmDialog, SheetScaffold
   widgets/content_card.dart  ContentCard (compact / list)
-  screens/                   7개 화면
+  screens/                   로그인 + 7개 화면
 
 backend/
   docker-compose.yml         postgres:17, 볼륨 pgdata
   app/db.py                  엔진 + 세션 + Base (동기 SQLAlchemy)
-  app/models.py              users / topics / sources / channels / delivery_settings
+  app/models.py              users / topics / sources / items / channels / delivery_settings
+  app/collector.py           피드 판별 + 수집
+  app/summarizer.py          OpenAI 관련성 판단 + 요약
   app/auth.py                bcrypt + JWT + current_user 의존성
   app/main.py                Pydantic 스키마 + 전체 라우트 + 가입 시드
 ```
@@ -129,8 +164,8 @@ Routes — 아티클 상세만 셸 밖에 있어 탭바가 숨는다.
   Riverpod/Bloc을 새로 들이지 말고, 상태를 바꾸는 코드는 `AppStore`의 메서드로 넣어 `notifyListeners()`를 타게 한다.
 - **`ThumbBox`는 이름 때문에 그렇게 불린다.** Material에 이미 `Thumb`(slider)가 있어 `ambiguous_import`가 난다.
   마찬가지로 칩은 `AppFilterChip` / `AppInputChip` — Material 동명 위젯과 충돌을 피한 이름이다.
-- **비동기는 `Future.delayed`로 흉내낸다.** 홈 초기 로딩 900ms, 아티클 AI 요약 1100ms.
-  아티클 `a3`은 요약 실패 상태를 목업에서 보여주기 위해 **의도적으로 실패**한다 — 버그가 아니다.
+- **발송이 아직 없어 수집 시각이 발송 시각을 대신한다.** 다이제스트 = 최근 24시간 수집분, 히스토리·주제 상세 그룹 = 수집일.
+  발송이 생기면 `ContentItem.collectedAt`을 쓰는 이 세 곳을 발송 기록으로 바꾼다.
 - **알림 설정에 저장 버튼이 없다.** 변경 즉시 저장 + "저장됨" 토스트가 스펙이다. 저장 버튼을 추가하지 말 것.
 - **테스트 디렉토리가 없다.** 기본 생성된 `widget_test.dart`는 목업 단계에서 의미가 없어 삭제했다.
   요청받지 않았다면 테스트를 새로 만들지 않는다.
@@ -139,10 +174,8 @@ Routes — 아티클 상세만 셸 밖에 있어 탭바가 숨는다.
 ## 열린 작업
 
 - **연결 후 QA 미완료.** 디자인 어긋남·사용성 문제가 남아 있다. 진행 상황은 `ROADMAP.md`.
-- 주제는 DB에서 오지만 콘텐츠는 코드에 남는다 — `Topic.fromJson`이 `topics.slug`(`llm`/`flutter`/`design`)로
-  목업 아이템을 붙인다. 수집기가 생기면 이 접합점만 걷어낸다.
-- 수집기(RSS·YouTube)와 AI 요약, 실제 발송은 아직 없다. 클라이언트가 할 수 없는 일이라 백엔드 작업이다.
-- 알림 설정 화면 미연동 채널 행에서 안내문 + "연동하기 ›" 가로 오버플로 (약 13px) — 수정 필요.
+- 자동 주기 수집과 실제 발송은 아직 없다. 자동 수집은 lifespan 루프나 cron으로 `collect_sources`를 부르면 된다.
+- 주제 0개일 때 소스 탭 크래시(`sources_screen.dart` `clamp(0, -1)`) — 주제 삭제 백로그와 같이 고친다.
 - Pretendard 미번들 → 시스템 폰트 폴백. `assets/fonts/` + `pubspec.yaml` `fonts:` 선언으로 해결.
 - 썸네일·아이콘이 이모지 플레이스홀더. 실제 이미지는 `ThumbBox`만 교체.
 - 주제 상세 무한 스크롤 미구현.

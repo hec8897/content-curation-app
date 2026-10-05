@@ -1,10 +1,18 @@
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,7 +26,10 @@ from .auth import (
     verify_google_id_token,
     verify_password,
 )
+from .collector import collect_sources
 from .db import Base, engine, get_db
+from .models import SUMMARY_MAX_ATTEMPTS
+from .summarizer import summarize_item, summarize_pending
 
 
 @asynccontextmanager
@@ -63,14 +74,40 @@ class SourceOut(BaseModel):
     last_collected_at: datetime | None
 
 
+class ItemSourceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    name: str
+    protocol: str
+    glyph: str
+
+
+class ItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    title: str
+    url: str
+    published_at: datetime
+    collected_at: datetime
+    summary: str | None
+    summary_attempts: int = Field(exclude=True)
+    source: ItemSourceOut
+
+    @computed_field
+    @property
+    def summary_status(self) -> Literal["pending", "done", "failed"]:
+        if self.summary:
+            return "done"
+        return "failed" if self.summary_attempts >= SUMMARY_MAX_ATTEMPTS else "pending"
+
+
 class TopicOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
-    slug: str | None
     name: str
     keywords: list[str]
     notify: bool
     sources: list[SourceOut]
+    items: list[ItemOut]
 
 
 class ChannelOut(BaseModel):
@@ -131,10 +168,6 @@ class SettingsPatch(BaseModel):
     send_minute: int | None = Field(default=None, ge=0, le=59)
 
 
-def _ago(**kwargs) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(**kwargs)
-
-
 # ponytail: 가입 직후 앱이 목업과 같은 모습이 되도록 심는 시드다.
 # 실제 수집기가 붙으면 주제 시드는 걷어내고 채널·설정 시드만 남긴다.
 def _seed(db: Session, user: models.User) -> None:
@@ -150,7 +183,6 @@ def _seed(db: Session, user: models.User) -> None:
     )
     llm = models.Topic(
         user_id=user.id,
-        slug="llm",
         name="LLM 에이전트",
         keywords=["LLM", "에이전트", "RAG"],
         notify=True,
@@ -160,27 +192,23 @@ def _seed(db: Session, user: models.User) -> None:
                 url="https://simonwillison.net/atom/everything/",
                 protocol="RSS",
                 glyph="📰",
-                last_collected_at=_ago(hours=3),
             ),
             models.Source(
-                name="Anthropic Engineering",
-                url="https://www.anthropic.com/engineering",
+                name="Hugging Face Blog",
+                url="https://huggingface.co/blog/feed.xml",
                 protocol="RSS",
-                glyph="🧠",
-                last_collected_at=_ago(hours=1),
+                glyph="🤗",
             ),
             models.Source(
                 name="Lex Fridman",
                 url="https://www.youtube.com/@lexfridman",
                 protocol="YouTube",
                 glyph="🎙",
-                last_collected_at=_ago(days=1),
             ),
         ],
     )
     flutter = models.Topic(
         user_id=user.id,
-        slug="flutter",
         name="Flutter 성능",
         keywords=["Flutter", "Impeller"],
         notify=False,
@@ -190,19 +218,17 @@ def _seed(db: Session, user: models.User) -> None:
                 url="https://medium.com/feed/flutter",
                 protocol="RSS",
                 glyph="💙",
-                last_collected_at=_ago(hours=5),
             ),
             models.Source(
                 name="Flutter Dev",
                 url="https://www.youtube.com/@flutterdev",
                 protocol="YouTube",
                 glyph="▶️",
-                last_collected_at=_ago(days=2),
             ),
         ],
     )
     design = models.Topic(
-        user_id=user.id, slug="design", name="디자인 시스템", keywords=["디자인 토큰"]
+        user_id=user.id, name="디자인 시스템", keywords=["디자인 토큰"]
     )
     db.add_all([llm, flutter, design])
 
@@ -362,3 +388,36 @@ def update_settings(
     db.commit()
     db.refresh(settings)
     return settings
+
+
+# ponytail: 수집은 이 라우트로만 돈다(주제 상세의 수집 버튼). 자동 수집이 필요해지면
+# lifespan에 주기 루프를 붙이거나 cron으로 이 로직을 부른다.
+@app.post("/topics/{topic_id}/collect", response_model=TopicOut)
+def collect_topic(
+    topic_id: uuid.UUID,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> models.Topic:
+    topic = _own_topic(db, user, topic_id)
+    if topic.sources and collect_sources(db, list(topic.sources)) == 0:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "소스에서 콘텐츠를 가져오지 못했습니다")
+    # 판단까지 끝낸 뒤 응답한다. 판단 전 아이템은 앱에 안 보이므로, 응답 뒤에 돌리면 수집 직후 화면이 빈다.
+    summarize_pending(db, [s.id for s in topic.sources])
+    db.refresh(topic)
+    return topic
+
+
+@app.post("/items/{item_id}/summarize", response_model=ItemOut)
+def resummarize(
+    item_id: uuid.UUID,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> models.Item:
+    item = db.get(models.Item, item_id)
+    if item is None or item.source.topic.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "콘텐츠를 찾을 수 없습니다")
+    # 시도 횟수 상한은 자동 요약에만 건다. 사용자가 누른 재시도는 항상 한 번 더 시도한다.
+    if item.summary is None:
+        summarize_item(db, item)
+        db.refresh(item)
+    return item

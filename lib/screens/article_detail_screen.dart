@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/api.dart';
 import '../data/store.dart';
 import '../design/app_colors.dart';
 import '../design/app_text.dart';
@@ -16,28 +17,25 @@ class ArticleDetailScreen extends StatefulWidget {
   State<ArticleDetailScreen> createState() => _ArticleDetailScreenState();
 }
 
-enum _SummaryState { loading, done, failed }
-
 class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
-  _SummaryState _state = _SummaryState.loading;
+  bool _retrying = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  void _load() {
-    setState(() => _state = _SummaryState.loading);
-    Future.delayed(const Duration(milliseconds: 1100), () {
-      if (!mounted) return;
-      // ponytail: 실패 상태를 목업에서 보이게 하려고 특정 아이템만 실패시킨다.
-      setState(() => _state = widget.articleId == 'a3' ? _SummaryState.failed : _SummaryState.done);
-    });
+  Future<void> _retry(ContentItem item) async {
+    setState(() => _retrying = true);
+    try {
+      store.replaceItem(ContentItem.fromJson(await request('POST', '/items/${item.id}/summarize')));
+    } on ApiException catch (e) {
+      if (mounted) showToast(context, e.message);
+    }
+    if (mounted) setState(() => _retrying = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: store, builder: (context, _) => _build(context));
+  }
+
+  Widget _build(BuildContext context) {
     final item = store.item(widget.articleId);
     if (item == null) {
       return const Scaffold(body: Center(child: Text('콘텐츠를 찾을 수 없어요')));
@@ -124,7 +122,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
   Widget _header(BuildContext context, ContentItem item, int total, int index) {
     final label = switch (widget.origin) {
-      'digest' => '${item.sentAt.month}월 ${item.sentAt.day}일 다이제스트',
+      'digest' => '${item.collectedAt.month}월 ${item.collectedAt.day}일 다이제스트',
       'history' => '알림 히스토리',
       _ => '주제 콘텐츠',
     };
@@ -153,7 +151,8 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   Widget _summary(ContentItem item) {
-    if (_state == _SummaryState.failed) {
+    final status = _retrying ? SummaryStatus.pending : item.summaryStatus;
+    if (status == SummaryStatus.failed) {
       return DashedBox(
         radius: 18,
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 18),
@@ -163,7 +162,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
             const SizedBox(height: 4),
             Text('잠시 후 다시 시도해 주세요.', style: AppText.label1.c(AppColors.labelAlt)),
             const SizedBox(height: 14),
-            OutlineButton(label: '다시 시도', onTap: _load),
+            OutlineButton(label: '다시 시도', onTap: () => _retry(item)),
           ],
         ),
       );
@@ -179,11 +178,11 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _state == _SummaryState.loading ? '✨ AI 요약 생성 중…' : 'AI 요약',
+            status == SummaryStatus.pending ? '✨ AI 요약 생성 중…' : 'AI 요약',
             style: AppText.label2.w700.c(AppColors.primary),
           ),
           const SizedBox(height: 10),
-          if (_state == _SummaryState.loading)
+          if (status == SummaryStatus.pending)
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -195,7 +194,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
               ],
             )
           else
-            Text(item.summary, style: AppText.body2.copyWith(height: 1.65, color: AppColors.labelNeutral)),
+            Text(item.summary!, style: AppText.body2.copyWith(height: 1.65, color: AppColors.labelNeutral)),
         ],
       ),
     );
